@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Flappy Anger Neon</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <style>
+    body {
+      background: #000;
+      margin: 0;
+      overflow: hidden;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      color: #fff;
+      touch-action: none; /* Убирает зум по двойному тапу */
+    }
+    #gameCanvas {
+      display: block;
+      background: radial-gradient(circle, #1a1a2e 0%, #000000 100%);
+    }
+    #ui {
+      position: absolute;
+      top: 20px;
+      width: 100%;
+      text-align: center;
+      font-size: 40px;
+      font-weight: bold;
+      text-shadow: 0 0 10px #ff0055;
+      pointer-events: none;
+    }
+    #gameOverScreen {
+      display: none;
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: rgba(20, 20, 20, 0.95);
+      padding: 40px;
+      border: 3px solid #ff0055;
+      border-radius: 20px;
+      text-align: center;
+      box-shadow: 0 0 50px rgba(255,0,85,0.5);
+      min-width: 200px;
+    }
+    h1 { color: #ff0055; margin: 0 0 20px 0; font-size: 30px; }
+    button {
+      background: linear-gradient(45deg, #ff0055, #ff5500);
+      border: none;
+      padding: 15px 40px;
+      color: #fff;
+      font-size: 20px;
+      font-weight: bold;
+      border-radius: 50px;
+      cursor: pointer;
+      margin-top: 20px;
+      box-shadow: 0 5px 15px rgba(255, 0, 85, 0.4);
+    }
+    button:active { transform: scale(0.95); }
+  </style>
+</head>
+<body>
+
+  <canvas id="gameCanvas"></canvas>
+  <div id="ui">0</div>
+  
+  <div id="gameOverScreen">
+    <h1>GAME OVER</h1>
+    <div style="font-size: 18px; color: #aaa;">Счет:</div>
+    <div id="finalScore" style="font-size: 50px; margin-bottom: 10px;">0</div>
+    <div id="highScore" style="font-size: 16px; color: #00ff88;">Рекорд: 0</div>
+    <button onclick="startGame()">ИГРАТЬ</button>
+  </div>
+
+  <script>
+    const tg = window.Telegram.WebApp;
+    tg.expand(); 
+
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const ui = document.getElementById('ui');
+    const gameOverScreen = document.getElementById('gameOverScreen');
+    const finalScoreDisplay = document.getElementById('finalScore');
+    const highScoreDisplay = document.getElementById('highScore');
+
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+
+    // --- ЗАГРУЗКА КАРТИНКИ ПТИЦЫ ---
+    const birdImg = new Image();
+    // Ссылка на спрайт птички (надежный источник)
+    birdImg.src = 'https://raw.githubusercontent.com/samuelcust/flappy-bird-assets/master/sprites/yellowbird-midflap.png';
+
+    // --- НАСТРОЙКИ ---
+    const BIRD_WIDTH = 34;  // Реальный размер картинки
+    const BIRD_HEIGHT = 24;
+    let BIRD_SCALE = 1.5;   // Увеличим птицу для экрана
+    
+    let JUMP_FORCE = -8;
+    let GRAVITY = 0.45;
+    const PIPE_WIDTH = 70;
+    let PIPE_GAP = 170;
+    let PIPE_SPEED = 3.5;
+    const PIPE_SPAWN_INTERVAL = 1400;
+
+    // --- ПЕРЕМЕННЫЕ ---
+    let bird;
+    let pipes = [];
+    let score = 0;
+    let lastPipeTime = 0;
+    let gameState = 'MENU';
+    let currentHighscore = localStorage.getItem('neonBirdHighscore') || 0;
+    
+    // Угол наклона птицы
+    let birdRotation = 0;
+
+    function resetGame() {
+      // Ставим птицу в центр
+      bird = { 
+        x: canvas.width / 2 - 50, 
+        y: canvas.height / 2, 
+        vy: 0,
+        width: BIRD_WIDTH * BIRD_SCALE,
+        height: BIRD_HEIGHT * BIRD_SCALE
+      };
+      pipes = [];
+      score = 0;
+      JUMP_FORCE = -8;
+      GRAVITY = 0.45;
+      PIPE_GAP = 170; 
+      PIPE_SPEED = 3.5;
+      ui.innerText = score;
+      birdRotation = 0;
+    }
+
+    function createPipe() {
+      const minHeight = 100;
+      const maxHeight = canvas.height - PIPE_GAP - 100;
+      const height = Math.floor(Math.random() * (maxHeight - minHeight)) + minHeight;
+      
+      pipes.push({
+        x: canvas.width,
+        y: height,
+        passed: false
+      });
+    }
+
+    function startGame() {
+      resetGame();
+      gameState = 'PLAYING';
+      gameOverScreen.style.display = 'none';
+      lastPipeTime = performance.now();
+    }
+
+    function gameOver() {
+      gameState = 'GAMEOVER';
+      if (score > currentHighscore) {
+        currentHighscore = score;
+        localStorage.setItem('neonBirdHighscore', score);
+      }
+      finalScoreDisplay.innerText = score;
+      highScoreDisplay.innerText = 'Лучший: ' + currentHighscore;
+      gameOverScreen.style.display = 'block';
+    }
+
+    function handleInput() {
+      if (gameState === 'PLAYING') {
+        bird.vy = JUMP_FORCE;
+        birdRotation = -25 * Math.PI / 180; // Резкий наклон вверх при прыжке
+      } else if (gameState === 'MENU') {
+        startGame();
+      }
+    }
+
+    // Управление
+    window.addEventListener('mousedown', handleInput);
+    window.addEventListener('touchstart', (e) => { e.preventDefault(); handleInput(); }, {passive: false});
+    window.addEventListener('keydown', (e) => { if(e.code === 'Space') handleInput(); });
+
+    function update(timestamp) {
+      if (gameState === 'PLAYING') {
+        // Физика птицы
+        bird.vy += GRAVITY;
+        bird.y += bird.vy;
+
+        // Вращение птицы (клюет носом вниз при падении)
+        if (bird.vy < 0) {
+           // летим вверх
+        } else {
+           birdRotation += 0.04; // плавно опускаем нос
+           if (birdRotation > 90 * Math.PI / 180) birdRotation = 90 * Math.PI / 180;
+        }
+
+        // Сложность
+        if (score > 10) PIPE_SPEED = 4.5;
+        if (score > 20) PIPE_GAP = 150;
+
+        // Трубы
+        if (timestamp - lastPipeTime > PIPE_SPAWN_INTERVAL - (score * 5)) {
+          createPipe();
+          lastPipeTime = timestamp;
+        }
+
+        for (let i = pipes.length - 1; i >= 0; i--) {
+          const pipe = pipes[i];
+          pipe.x -= PIPE_SPEED;
+
+          // Счет
+          if (!pipe.passed && bird.x > pipe.x + PIPE_WIDTH) {
+            score++;
+            pipe.passed = true;
+            ui.innerText = score;
+          }
+
+          // Столкновения (упрощенная модель хитбокса для удобства)
+          // Хитбокс чуть меньше самой картинки, чтобы было честно
+          const hitboxPadding = 5;
+          const birdLeft = bird.x + hitboxPadding;
+          const birdRight = bird.x + bird.width - hitboxPadding;
+          const birdTop = bird.y + hitboxPadding;
+          const birdBottom = bird.y + bird.height - hitboxPadding;
+
+          const pipeLeft = pipe.x;
+          const pipeRight = pipe.x + PIPE_WIDTH;
+          
+          // Верхняя труба
+          if (birdRight > pipeLeft && birdLeft < pipeRight && birdTop < pipe.y) {
+            gameOver();
+          }
+          // Нижняя труба
+          if (birdRight > pipeLeft && birdLeft < pipeRight && birdBottom > pipe.y + PIPE_GAP) {
+             gameOver();
+          }
+          
+          // Пол и потолок
+          if (bird.y + bird.height > canvas.height || bird.y < 0) {
+            gameOver();
+          }
+
+          if (pipe.x < -PIPE_WIDTH) pipes.splice(i, 1);
+        }
+      }
+
+      draw();
+      requestAnimationFrame(update);
+    }
+
+    function draw() {
+      // Очистка
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // Рисуем трубы (с градиентом)
+      pipes.forEach(pipe => {
+        // Создаем градиент для объема
+        let grad = ctx.createLinearGradient(pipe.x, 0, pipe.x + PIPE_WIDTH, 0);
+        grad.addColorStop(0, '#00b34a'); // Темно-зеленый
+        grad.addColorStop(0.5, '#00ff6a'); // Светло-зеленый (блик)
+        grad.addColorStop(1, '#00b34a');
+
+        ctx.fillStyle = grad;
+        // Верхняя
+        ctx.fillRect(pipe.x, 0, PIPE_WIDTH, pipe.y);
+        // "Шапка" верхней трубы
+        ctx.fillRect(pipe.x - 5, pipe.y - 20, PIPE_WIDTH + 10, 20);
+
+        // Нижняя
+        ctx.fillRect(pipe.x, pipe.y + PIPE_GAP, PIPE_WIDTH, canvas.height);
+        // "Шапка" нижней трубы
+        ctx.fillRect(pipe.x - 5, pipe.y + PIPE_GAP, PIPE_WIDTH + 10, 20);
+        
+        // Обводка (неоновый стиль)
+        ctx.strokeStyle = '#000';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(pipe.x, 0, PIPE_WIDTH, pipe.y);
+        ctx.strokeRect(pipe.x, pipe.y + PIPE_GAP, PIPE_WIDTH, canvas.height);
+      });
+
+      // Рисуем птицу (с поворотом)
+      if (bird) {
+        ctx.save();
+        ctx.translate(bird.x + bird.width/2, bird.y + bird.height/2);
+        ctx.rotate(birdRotation);
+        // Если картинка загрузилась - рисуем её, если нет - желтый квадрат
+        if (birdImg.complete) {
+            ctx.drawImage(birdImg, -bird.width/2, -bird.height/2, bird.width, bird.height);
+        } else {
+            ctx.fillStyle = 'yellow';
+            ctx.fillRect(-bird.width/2, -bird.height/2, bird.width, bird.height);
+        }
+        ctx.restore();
+      }
+    }
+
+    // Инициализация
+    highScoreDisplay.innerText = 'Лучший: ' + currentHighscore;
+    // Первый запуск меню
+    ctx.fillStyle = 'white';
+    ctx.font = '20px Arial';
+    ctx.fillText("Нажми, чтобы играть", canvas.width/2 - 80, canvas.height/2);
+    
+    // Запуск цикла
+    requestAnimationFrame(update);
+
+  </script>
+</body>
+</html>
