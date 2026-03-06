@@ -1,20 +1,32 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Neon Bird</title>
+  <title>Neon Bird HARDCORE</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <script src="https://api.adsgram.ai/sdk.js"></script>
+  
   <style>
     body {
       background: #000;
       margin: 0;
-      overflow: hidden; /* Убирает скролл */
-      touch-action: none; /* Отключает зум и скролл браузера */
+      overflow: hidden;
+      touch-action: none;
       user-select: none;
       -webkit-user-select: none;
     }
-    canvas {
-      display: block;
+    canvas { display: block; }
+    /* Эффект тряски экрана при смерти */
+    .shake { animation: shake 0.5s; }
+    @keyframes shake {
+      0% { transform: translate(1px, 1px) rotate(0deg); }
+      10% { transform: translate(-1px, -2px) rotate(-1deg); }
+      20% { transform: translate(-3px, 0px) rotate(1deg); }
+      30% { transform: translate(3px, 2px) rotate(0deg); }
+      40% { transform: translate(1px, -1px) rotate(1deg); }
+      50% { transform: translate(-1px, 2px) rotate(-1deg); }
+      60% { transform: translate(-3px, 1px) rotate(0deg); }
+      100% { transform: translate(0, 0) rotate(0deg); }
     }
   </style>
 </head>
@@ -23,306 +35,230 @@
   <canvas id="gameCanvas"></canvas>
 
   <script>
-    // Инициализация Telegram
+    // --- ID РЕКЛАМЫ ---
+    const AD_BLOCK_ID = "0"; // <-- ВСТАВЬ СЮДА ID
+
+    // Инициализация
     const tg = window.Telegram.WebApp;
     tg.expand();
-    if(tg.disableVerticalSwipes) tg.disableVerticalSwipes(); // Отключает свайп закрытия (на новых версиях)
+    if(tg.disableVerticalSwipes) tg.disableVerticalSwipes();
+
+    let AdController;
+    if (window.Adsgram) AdController = window.Adsgram.init({ blockId: AD_BLOCK_ID });
 
     const canvas = document.getElementById('gameCanvas');
     const ctx = canvas.getContext('2d');
-
-    // Растягиваем на весь экран
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
 
-    // --- ЗАГРУЗКА КАРТИНКИ ---
     const img = new Image();
-    // Используем надежную прямую ссылку на спрайт птички
     img.src = 'https://raw.githubusercontent.com/samuelcust/flappy-bird-assets/master/sprites/yellowbird-midflap.png';
-    
-    // --- КОНСТАНТЫ И НАСТРОЙКИ ---
+
+    // --- ХАРДКОРНЫЕ НАСТРОЙКИ ---
     let frames = 0;
-    const DEGREE = Math.PI / 180;
     let score = 0;
-    let bestScore = localStorage.getItem('angryBirdBest') || 0;
+    let bestScore = localStorage.getItem('hardcoreBest') || 0;
+    let globalSpeed = 3.5; // Начальная скорость выше
+    let deathCounter = 0;
 
-    // Вибрация
-    function vibrate(ms = 10) {
-        if (window.navigator && window.navigator.vibrate) window.navigator.vibrate(ms);
-    }
+    const state = { current: 0, getReady: 0, game: 1, over: 2 };
 
-    // Состояния игры
-    const state = {
-        current: 0,
-        getReady: 0,
-        game: 1,
-        over: 2
-    };
-
-    // ОБЪЕКТ: Птица
     const bird = {
-        x: canvas.width / 4, // Чуть сдвинем влево от центра
+        x: canvas.width / 3, // Птица ближе к центру для реакции
         y: canvas.height / 2,
-        width: 34,
-        height: 24,
-        radius: 12, // Радиус для коллизий
-        speed: 0,
-        gravity: 0.25,
-        jump: 4.8,
+        width: 34, height: 24, radius: 12,
+        speed: 0, 
+        gravity: 0.45, // Тяжелая птица
+        jump: 7.5,     // Резкий прыжок
         rotation: 0,
         
         draw: function() {
             ctx.save();
             ctx.translate(this.x, this.y);
             ctx.rotate(this.rotation);
-            
-            // Если картинка загрузилась - рисуем её
             if (img.complete && img.naturalWidth !== 0) {
-                // Птичка в коде маленькая, увеличим её немного (масштаб 1.5)
                 ctx.drawImage(img, -this.width*1.5/2, -this.height*1.5/2, this.width*1.5, this.height*1.5);
             } else {
-                // Резервный вариант - неоновый квадрат
-                ctx.fillStyle = "#FF0"; 
-                ctx.shadowBlur = 15;
-                ctx.shadowColor = "#FF0";
-                ctx.fillRect(-this.width/2, -this.height/2, this.width, this.height);
-                ctx.shadowBlur = 0;
+                ctx.fillStyle = "#F00"; ctx.fillRect(-this.width/2, -this.height/2, this.width, this.height);
             }
             ctx.restore();
         },
-        
         update: function() {
             if (state.current == state.getReady) {
-                // Покачивание в меню
-                this.y = canvas.height / 2 + Math.cos(frames/15) * 10;
+                this.y = canvas.height / 2 + Math.cos(frames/10) * 15; // Быстрое покачивание
                 this.rotation = 0;
             } else {
-                // Физика полета
                 this.speed += this.gravity;
                 this.y += this.speed;
 
-                // Вращение (нос вверх при прыжке, вниз при падении)
+                // Резкий наклон
                 if (this.speed < this.jump / 2) {
-                    this.rotation = -25 * DEGREE;
+                    this.rotation = -25 * Math.PI / 180;
                 } else {
-                    this.rotation += 4 * DEGREE;
-                    if (this.rotation >= 90 * DEGREE) this.rotation = 90 * DEGREE;
+                    this.rotation += 8 * Math.PI / 180; // Быстро клюет носом
+                    if (this.rotation >= 90 * Math.PI / 180) this.rotation = 90 * Math.PI / 180;
                 }
                 
-                // Удар об пол
                 if (this.y + this.height/2 >= canvas.height) {
                     this.y = canvas.height - this.height/2;
-                    if(state.current == state.game) {
-                        state.current = state.over;
-                        vibrate(50);
-                    }
+                    if(state.current == state.game) gameOverAction();
                 }
-                // Потолок (просто ограничиваем)
-                if (this.y - this.height/2 <= 0) this.y = this.height/2;
+                if (this.y < 0) this.y = 0;
             }
         },
-        
-        flap: function() {
-            this.speed = -this.jump;
-        },
-        
-        reset: function() {
-            this.speed = 0;
-            this.rotation = 0;
-            this.y = canvas.height / 2;
-        }
+        flap: function() { this.speed = -this.jump; },
+        reset: function() { this.speed = 0; this.rotation = 0; this.y = canvas.height / 2; }
     };
 
-    // ОБЪЕКТ: Трубы
     const pipes = {
-        position: [],
-        w: 60, // Ширина трубы
-        h: canvas.height, // Высота картинки трубы (берем высоту экрана)
-        gap: 160, // Свободный проход (гэп)
-        dx: 2.8, // Скорость движения
+        position: [], w: 60, h: canvas.height, 
+        gap: 170, // Начальный гэп
         
         draw: function() {
             for (let i = 0; i < this.position.length; i++) {
                 let p = this.position[i];
-                
-                // Верхняя труба
                 let topY = p.y;
                 
-                // Рисуем неоновые прямоугольники
-                ctx.fillStyle = "#0F8"; // Неоново-зеленый
-                ctx.shadowBlur = 15;
-                ctx.shadowColor = "#0F8";
-                
-                // Верхняя (рисуем от Y вверх до бесконечности)
+                // Красные "злые" трубы
+                let grad = ctx.createLinearGradient(p.x, 0, p.x + this.w, 0);
+                grad.addColorStop(0, '#800'); grad.addColorStop(0.5, '#f00'); grad.addColorStop(1, '#800');
+                ctx.fillStyle = grad;
+
                 ctx.fillRect(p.x, topY - this.h, this.w, this.h); 
+                ctx.fillRect(p.x, topY + p.currentGap, this.w, this.h);
                 
-                // Нижняя (рисуем от Y+gap вниз до бесконечности)
-                ctx.fillRect(p.x, topY + this.gap, this.w, this.h);
-                
-                // Сброс тени и добавление обводки
-                ctx.shadowBlur = 0;
-                ctx.strokeStyle = "#fff";
-                ctx.lineWidth = 2;
+                ctx.strokeStyle = "#fff"; ctx.lineWidth = 2;
                 ctx.strokeRect(p.x, topY - this.h, this.w, this.h);
-                ctx.strokeRect(p.x, topY + this.gap, this.w, this.h);
+                ctx.strokeRect(p.x, topY + p.currentGap, this.w, this.h);
             }
         },
-        
         update: function() {
             if (state.current !== state.game) return;
+
+            // Ускорение игры
+            globalSpeed = 3.5 + (score * 0.15); // Каждое очко ускоряет игру
             
-            // Добавляем трубы каждые 120 кадров
-            if (frames % 120 == 0) {
-                // ИСПРАВЛЕННАЯ ЛОГИКА ГЕНЕРАЦИИ (БЕЗОПАСНАЯ ЗОНА)
-                // Задаем буфер от краев экрана (150px сверху и снизу)
-                const screenBuffer = 150; 
-                
-                // Минимальная и максимальная высота, где может закончиться ВЕРХНЯЯ труба
-                const minY = screenBuffer;
-                const maxY = canvas.height - this.gap - screenBuffer;
-
-                // Случайная высота в этом безопасном диапазоне
-                const randomY = Math.random() * (maxY - minY) + minY;
-
-                this.position.push({
-                    x: canvas.width,
-                    y: randomY // Это нижний край ВЕРХНЕЙ трубы
-                });
+            // Генерация труб чаще из-за скорости
+            if (frames % Math.floor(100 - score) == 0 || frames % 60 == 0) { 
+                 if (this.position.length === 0 || canvas.width - this.position[this.position.length-1].x > 220) {
+                    // Сужение прохода
+                    let newGap = Math.max(110, 170 - (score * 2)); 
+                    
+                    const screenBuffer = 100;
+                    const minY = screenBuffer;
+                    const maxY = canvas.height - newGap - screenBuffer;
+                    
+                    this.position.push({ 
+                        x: canvas.width, 
+                        y: Math.random() * (maxY - minY) + minY,
+                        currentGap: newGap,
+                        moving: score > 10, // Движение после 10 очков
+                        dir: Math.random() > 0.5 ? 1 : -1
+                    });
+                 }
             }
-            
+
             for (let i = 0; i < this.position.length; i++) {
                 let p = this.position[i];
-                p.x -= this.dx; // Двигаем влево
-                
-                // Коллизии (столкновения)
-                let bottomPipeY = p.y + this.gap;
-                
-                // Хитбокс птицы (чуть меньше радиуса для честности)
-                let birdHitboxRadius = bird.radius * 0.8;
+                p.x -= globalSpeed;
 
-                // Проверка удара
-                if (
-                    bird.x + birdHitboxRadius > p.x && 
-                    bird.x - birdHitboxRadius < p.x + this.w && 
-                    (bird.y - birdHitboxRadius < p.y || bird.y + birdHitboxRadius > bottomPipeY)
-                ) {
-                    state.current = state.over;
-                    vibrate(50);
+                // Движение труб вверх-вниз (Хардкор)
+                if (p.moving) {
+                    p.y += 1.5 * p.dir;
+                    if (frames % 40 == 0) p.dir *= -1; // Меняем направление
                 }
+
+                let bottomPipeY = p.y + p.currentGap;
                 
-                // Удаление ушедших труб и начисление очков
+                // Коллизии
+                let r = bird.radius * 0.9;
+                if (bird.x + r > p.x && bird.x - r < p.x + this.w && 
+                   (bird.y - r < p.y || bird.y + r > bottomPipeY)) {
+                    gameOverAction();
+                }
+
                 if (p.x + this.w <= 0) {
                     this.position.shift();
-                    score++; // Очко!
+                    score++;
                     bestScore = Math.max(score, bestScore);
-                    localStorage.setItem('angryBirdBest', bestScore);
-                    vibrate(10); // Легкая вибрация на очке
+                    localStorage.setItem('hardcoreBest', bestScore);
                 }
             }
         },
-        
-        reset: function() {
-            this.position = [];
-        }
+        reset: function() { this.position = []; }
     };
 
-    // РИСУЕМ ТЕКСТ (СЧЕТ И ИНТЕРФЕЙС)
-    function drawUI() {
-        ctx.fillStyle = "#FFF";
-        ctx.strokeStyle = "#000";
-        ctx.lineWidth = 2;
-        ctx.textAlign = "center";
+    function gameOverAction() {
+        state.current = state.over;
+        canvas.classList.add("shake"); // Тряска экрана
+        setTimeout(() => canvas.classList.remove("shake"), 500);
         
-        if (state.current == state.getReady) {
-            ctx.font = "bold 30px Arial";
-            ctx.fillText("TAP TO START", canvas.width/2, canvas.height/2 + 70);
-            ctx.strokeText("TAP TO START", canvas.width/2, canvas.height/2 + 70);
-            
-            ctx.font = "20px Arial";
-            ctx.fillText("Best: " + bestScore, canvas.width/2, canvas.height/2 + 105);
-        } 
-        else if (state.current == state.game) {
-            ctx.font = "bold 60px Arial";
-            // Тень для счета
-            ctx.shadowBlur = 10;
-            ctx.shadowColor = "#000";
-            ctx.fillText(score, canvas.width/2, 100);
-            ctx.strokeText(score, canvas.width/2, 100);
-            ctx.shadowBlur = 0;
-        } 
-        else if (state.current == state.over) {
-            // Фон окна Game Over
-            ctx.fillStyle = "rgba(0,0,0,0.8)";
-            ctx.fillRect(canvas.width/2 - 120, canvas.height/2 - 80, 240, 160);
-            ctx.strokeStyle = "#F00";
-            ctx.strokeRect(canvas.width/2 - 120, canvas.height/2 - 80, 240, 160);
-
-            ctx.fillStyle = "#F00";
-            ctx.font = "bold 35px Arial";
-            ctx.fillText("GAME OVER", canvas.width/2, canvas.height/2 - 30);
-            
-            ctx.fillStyle = "#FFF";
-            ctx.font = "25px Arial";
-            ctx.fillText("Score: " + score, canvas.width/2, canvas.height/2 + 15);
-            ctx.fillText("Best: " + bestScore, canvas.width/2, canvas.height/2 + 45);
-            
-            ctx.font = "bold 18px Arial";
-            ctx.fillStyle = "#0F8"; 
-            ctx.fillText("Tap to restart", canvas.width/2, canvas.height/2 + 70);
+        if (window.navigator && window.navigator.vibrate) window.navigator.vibrate([50, 50, 50]);
+        
+        deathCounter++;
+        if (deathCounter % 3 === 0 && AdController) {
+            AdController.show().catch(() => {});
         }
     }
 
-    // --- УПРАВЛЕНИЕ ---
-    // Используем pointerdown - работает и на ПК и на телефонах
-    window.addEventListener("pointerdown", function(evt) {
-        // Убираем реакцию на клики по UI Телеграма (если они есть)
-        if(evt.target !== canvas) return;
+    function drawUI() {
+        ctx.fillStyle = "#FFF"; ctx.strokeStyle = "#000"; ctx.lineWidth = 3; ctx.textAlign = "center";
+        
+        if (state.current == state.getReady) {
+            ctx.font = "bold 40px Impact";
+            ctx.fillText("HARDCORE", canvas.width/2, canvas.height/2 - 50);
+            ctx.strokeText("HARDCORE", canvas.width/2, canvas.height/2 - 50);
+            ctx.font = "20px Arial";
+            ctx.fillText("Tap to suffer", canvas.width/2, canvas.height/2 + 20);
+        } else if (state.current == state.game) {
+            ctx.font = "bold 60px Impact";
+            ctx.fillText(score, canvas.width/2, 80);
+            ctx.strokeText(score, canvas.width/2, 80);
+        } else if (state.current == state.over) {
+            ctx.fillStyle = "rgba(100,0,0,0.8)";
+            ctx.fillRect(canvas.width/2 - 120, canvas.height/2 - 80, 240, 160);
+            ctx.strokeStyle = "#F00"; ctx.strokeRect(canvas.width/2 - 120, canvas.height/2 - 80, 240, 160);
+            
+            ctx.fillStyle = "#F00"; ctx.font = "bold 40px Impact";
+            ctx.fillText("YOU DIED", canvas.width/2, canvas.height/2 - 30);
+            
+            ctx.fillStyle = "#FFF"; ctx.font = "25px Arial";
+            ctx.fillText("Score: " + score, canvas.width/2, canvas.height/2 + 15);
+            ctx.fillText("Best: " + bestScore, canvas.width/2, canvas.height/2 + 45);
+        }
+    }
 
+    window.addEventListener("pointerdown", function(evt) {
         switch (state.current) {
             case state.getReady:
                 state.current = state.game;
-                bird.flap(); // Сразу подпрыгнуть при старте
+                bird.flap();
                 break;
             case state.game:
                 bird.flap();
-                vibrate(5);
                 break;
             case state.over:
-                // Сброс всего
-                bird.reset();
-                pipes.reset();
-                score = 0;
-                frames = 0;
+                bird.reset(); pipes.reset(); score = 0; frames = 0;
+                globalSpeed = 3.5;
                 state.current = state.getReady;
                 break;
         }
     });
 
-    // --- ГЛАВНЫЙ ЦИКЛ ---
     function loop() {
-        // Очистка (Градиентный фон)
         let bgGrad = ctx.createLinearGradient(0, 0, 0, canvas.height);
-        bgGrad.addColorStop(0, '#1a1a2e');
-        bgGrad.addColorStop(1, '#000');
-        ctx.fillStyle = bgGrad;
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-        // Обновление и отрисовка
-        pipes.update();
-        pipes.draw();
+        // Красный зловещий фон
+        bgGrad.addColorStop(0, '#200'); bgGrad.addColorStop(1, '#000');
+        ctx.fillStyle = bgGrad; ctx.fillRect(0, 0, canvas.width, canvas.height);
         
-        bird.update();
-        bird.draw();
-        
+        pipes.update(); pipes.draw();
+        bird.update(); bird.draw();
         drawUI();
         
         frames++;
         requestAnimationFrame(loop);
     }
-
-    // Старт
     loop();
-
   </script>
 </body>
 </html>
